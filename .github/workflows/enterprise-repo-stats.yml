@@ -1,0 +1,101 @@
+name: All Enterprise Organization Repository Stats
+
+on:
+  workflow_dispatch:
+    inputs:
+      enterprise:
+        description: GitHub Enterprise slug
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
+      ACCESS_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
+      ENTERPRISE: ${{ inputs.enterprise }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "25"
+
+      - name: Install stats extension
+        run: gh extension install mona-actions/gh-repo-stats-plus
+
+      - name: Fetch all organizations in the enterprise
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          ORGS_FILE="$GITHUB_WORKSPACE/orgs.txt"
+          : > "$ORGS_FILE"
+
+          page=1
+          while :; do
+            response="$(
+              gh api \
+                --method GET \
+                -H "Accept: application/vnd.github+json" \
+                "/enterprises/${ENTERPRISE}/organizations?per_page=100&page=${page}"
+            )"
+
+            count="$(jq 'length' <<<"$response")"
+            if [[ "$count" -eq 0 ]]; then
+              break
+            fi
+
+            jq -r '.[].login' <<<"$response" >> "$ORGS_FILE"
+            page=$((page + 1))
+          done
+
+          sort -u -o "$ORGS_FILE" "$ORGS_FILE"
+
+          echo "Discovered organizations:"
+          cat "$ORGS_FILE"
+
+          if [[ ! -s "$ORGS_FILE" ]]; then
+            echo "::error::No organizations found for enterprise '${ENTERPRISE}'."
+            exit 1
+          fi
+
+      - name: Gather repository statistics for all enterprise orgs
+        run: |
+          gh repo-stats-plus repo-stats \
+            --org-list "$GITHUB_WORKSPACE/orgs.txt" \
+            --delay-between-orgs 10 \
+            --continue-on-error \
+            --output-dir "$GITHUB_WORKSPACE/output"
+
+      - name: Combine organization reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$GITHUB_WORKSPACE"/output/*-all_repos-*.csv)
+
+          if (( ${#files[@]} > 1 )); then
+            gh repo-stats-plus combine-stats \
+              --files "${files[@]}" \
+              --output-dir "$GITHUB_WORKSPACE/output" \
+              --output-file-name all-organizations.csv
+          elif (( ${#files[@]} == 1 )); then
+            cp "${files[0]}" "$GITHUB_WORKSPACE/output/all-organizations.csv"
+          else
+            echo "::error::No repository statistics CSVs were generated."
+            exit 1
+          fi
+
+      - name: Upload reports and checkpoint files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-enterprise-organization-repo-stats
+          path: output/
+          if-no-files-found: warn
