@@ -75,7 +75,7 @@ jobs:
       # Uploads the artifact repo-stats-organization-<org> on success and
       # repo-stats-state-organization-<org> on failure (auto-resumes on re-run)
       - name: Gather repository statistics for ${{ matrix.org }}
-        uses: mona-actions/gh-repo-stats-plus@v1
+        uses: mona-actions/gh-repo-stats-plus@7c6f935464f66d0a637d91ea36f6f252f98d56ba # v4.6.0
         with:
           type: organization
           github-token: ${{ github.token }}
@@ -99,7 +99,7 @@ jobs:
       # With only one organization there is nothing to combine; the single CSV
       # is already available in its own repo-stats-organization-<org> artifact.
       - name: Combine organization reports
-        uses: mona-actions/gh-repo-stats-plus@v1
+        uses: mona-actions/gh-repo-stats-plus@7c6f935464f66d0a637d91ea36f6f252f98d56ba # v4.6.0
         with:
           type: combine
           github-token: ${{ github.token }}
