@@ -72,6 +72,8 @@ jobs:
       matrix:
         org: ${{ fromJSON(needs.discover.outputs.orgs) }}
     steps:
+      - uses: actions/checkout@v4
+
       # Uploads the artifact repo-stats-organization-<org> on success and
       # repo-stats-state-organization-<org> on failure (auto-resumes on re-run)
       - name: Gather repository statistics for ${{ matrix.org }}
@@ -88,6 +90,8 @@ jobs:
     if: ${{ !cancelled() && needs.discover.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download organization reports
         uses: actions/download-artifact@v4
         with:
