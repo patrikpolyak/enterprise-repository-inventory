@@ -6,6 +6,7 @@ on:
       enterprise:
         description: GitHub Enterprise slug
         required: true
+        default: patrikpolyak-enterprise-cloud-testing
 
 permissions:
   contents: read
@@ -37,23 +38,19 @@ jobs:
           ORGS_FILE="$GITHUB_WORKSPACE/orgs.txt"
           : > "$ORGS_FILE"
 
-          page=1
-          while :; do
-            response="$(
-              gh api \
-                --method GET \
-                -H "Accept: application/vnd.github+json" \
-                "/enterprises/${ENTERPRISE}/organizations?per_page=100&page=${page}"
-            )"
-
-            count="$(jq 'length' <<<"$response")"
-            if [[ "$count" -eq 0 ]]; then
-              break
-            fi
-
-            jq -r '.[].login' <<<"$response" >> "$ORGS_FILE"
-            page=$((page + 1))
-          done
+          gh api graphql \
+            --paginate \
+            -F enterprise="$ENTERPRISE" \
+            -f query='
+              query($enterprise: String!, $endCursor: String) {
+                enterprise(slug: $enterprise) {
+                  organizations(first: 100, after: $endCursor) {
+                    nodes { login }
+                    pageInfo { hasNextPage endCursor }
+                  }
+                }
+              }' \
+            --jq '.data.enterprise.organizations.nodes[].login' >> "$ORGS_FILE"
 
           sort -u -o "$ORGS_FILE" "$ORGS_FILE"
 
