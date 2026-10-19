@@ -72,12 +72,12 @@ jobs:
       matrix:
         org: ${{ fromJSON(needs.discover.outputs.orgs) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Uploads the artifact repo-stats-organization-<org> on success and
       # repo-stats-state-organization-<org> on failure (auto-resumes on re-run)
       - name: Gather repository statistics for ${{ matrix.org }}
-        uses: mona-actions/gh-repo-stats-plus@7c6f935464f66d0a637d91ea36f6f252f98d56ba # v4.6.0
+        uses: mona-actions/gh-repo-stats-plus@v4.6.0
         with:
           type: organization
           github-token: ${{ github.token }}
@@ -90,10 +90,10 @@ jobs:
     if: ${{ !cancelled() && needs.discover.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Download organization reports
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           pattern: repo-stats-organization-*
           path: output
@@ -103,7 +103,7 @@ jobs:
       # With only one organization there is nothing to combine; the single CSV
       # is already available in its own repo-stats-organization-<org> artifact.
       - name: Combine organization reports
-        uses: mona-actions/gh-repo-stats-plus@7c6f935464f66d0a637d91ea36f6f252f98d56ba # v4.6.0
+        uses: mona-actions/gh-repo-stats-plus@v4.6.0
         with:
           type: combine
           github-token: ${{ github.token }}
