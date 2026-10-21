@@ -105,6 +105,14 @@ jobs:
           path: output
           merge-multiple: true
 
+      # The combine action merges every CSV in the output directory, so move
+      # the per-organization migration audit files out of it first
+      - name: Exclude migration audit files from combine
+        shell: bash
+        run: |
+          mkdir -p audit
+          find output -maxdepth 1 -name '*-audit.csv' -exec mv {} audit/ \;
+
       # Writes combined-stats.csv and uploads it as repo-stats-combine-<enterprise>.
       # With only one organization there is nothing to combine; the single CSV
       # is already available in its own repo-stats-organization-<org> artifact.
