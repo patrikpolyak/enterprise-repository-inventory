@@ -11,6 +11,11 @@ on:
         description: Maximum number of organizations processed concurrently
         required: true
         default: "10"
+      run_migration_audit:
+        description: Run the migration audit alongside stats collection
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -83,6 +88,7 @@ jobs:
           github-token: ${{ github.token }}
           access-token: ${{ secrets.ENTERPRISE_PAT }}
           organization: ${{ matrix.org }}
+          run-migration-audit: ${{ inputs.run_migration_audit && 'true' || 'false' }}
 
   combine:
     needs: [discover, stats]
