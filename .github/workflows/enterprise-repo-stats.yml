@@ -11,6 +11,10 @@ on:
         description: Maximum number of organizations processed concurrently
         required: true
         default: "10"
+      base_url:
+        description: GitHub API base URL (for GHES, e.g. https://ghes.example.com/api/v3)
+        required: false
+        default: https://api.github.com
       run_migration_audit:
         description: Run the migration audit alongside stats collection
         type: boolean
@@ -27,7 +31,9 @@ jobs:
       orgs: ${{ steps.orgs.outputs.orgs }}
     env:
       GH_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
+      GH_ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
       ENTERPRISE: ${{ inputs.enterprise }}
+      BASE_URL: ${{ inputs.base_url || 'https://api.github.com' }}
     steps:
       - name: Fetch all organizations in the enterprise
         id: orgs
@@ -35,8 +41,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Derive the gh hostname from the API base URL
+          host="${BASE_URL#*://}"
+          host="${host%%/*}"
+          if [[ "$host" == "api.github.com" ]]; then host="github.com"; fi
+
           orgs="$(
             gh api graphql \
+              --hostname "$host" \
               --paginate \
               -F enterprise="$ENTERPRISE" \
               -f query='
@@ -85,6 +97,7 @@ jobs:
         uses: mona-actions/gh-repo-stats-plus@v4.6.0
         with:
           type: organization
+          base-url: ${{ inputs.base_url || 'https://api.github.com' }}
           github-token: ${{ github.token }}
           access-token: ${{ secrets.ENTERPRISE_PAT }}
           organization: ${{ matrix.org }}
@@ -120,5 +133,6 @@ jobs:
         uses: mona-actions/gh-repo-stats-plus@v4.6.0
         with:
           type: combine
+          base-url: ${{ inputs.base_url || 'https://api.github.com' }}
           github-token: ${{ github.token }}
           organization: ${{ inputs.enterprise }}
