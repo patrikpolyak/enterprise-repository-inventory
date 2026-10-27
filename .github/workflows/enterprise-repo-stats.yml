@@ -21,7 +21,7 @@ on:
         required: false
         default: false
       auth:
-        description: Authentication method (github-app uses the enterprise installer app and per-organization inventory app installations)
+        description: Authentication method (github-app uses one enterprise-owned GitHub App installed on the enterprise and on each organization)
         type: choice
         required: true
         default: github-app
@@ -38,15 +38,16 @@ jobs:
     outputs:
       orgs: ${{ steps.orgs.outputs.orgs }}
     steps:
-      # Token for the installer app installed on the enterprise account. It can
-      # only list organizations and manage app installations in them.
-      - name: Create enterprise installer app token
-        id: installer-token
+      # Token for the app's enterprise installation. Only enterprise permissions
+      # apply here: it can list organizations and manage app installations in
+      # them, but cannot read organization or repository data.
+      - name: Create enterprise installation token
+        id: enterprise-token
         if: ${{ inputs.auth == 'github-app' }}
         uses: actions/create-github-app-token@v3.3.0
         with:
-          client-id: ${{ vars.INSTALLER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.INSTALLER_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
           enterprise: ${{ inputs.enterprise }}
           github-api-url: ${{ inputs.base_url || 'https://api.github.com' }}
 
@@ -55,11 +56,11 @@ jobs:
         shell: bash
         env:
           AUTH: ${{ inputs.auth }}
-          GH_TOKEN: ${{ inputs.auth == 'github-app' && steps.installer-token.outputs.token || secrets.ENTERPRISE_PAT }}
-          GH_ENTERPRISE_TOKEN: ${{ inputs.auth == 'github-app' && steps.installer-token.outputs.token || secrets.ENTERPRISE_PAT }}
+          GH_TOKEN: ${{ inputs.auth == 'github-app' && steps.enterprise-token.outputs.token || secrets.ENTERPRISE_PAT }}
+          GH_ENTERPRISE_TOKEN: ${{ inputs.auth == 'github-app' && steps.enterprise-token.outputs.token || secrets.ENTERPRISE_PAT }}
           ENTERPRISE: ${{ inputs.enterprise }}
           BASE_URL: ${{ inputs.base_url || 'https://api.github.com' }}
-          INVENTORY_APP_CLIENT_ID: ${{ vars.INVENTORY_APP_CLIENT_ID }}
+          APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
         run: |
           set -euo pipefail
 
@@ -69,8 +70,8 @@ jobs:
           if [[ "$host" == "api.github.com" ]]; then host="github.com"; fi
 
           if [[ "$AUTH" == "github-app" ]]; then
-            if [[ -z "$INVENTORY_APP_CLIENT_ID" ]]; then
-              echo "::error::Repository variable INVENTORY_APP_CLIENT_ID is not set."
+            if [[ -z "$APP_CLIENT_ID" ]]; then
+              echo "::error::Repository variable APP_CLIENT_ID is not set."
               exit 1
             fi
 
@@ -81,22 +82,22 @@ jobs:
               | sort -u | jq -R . | jq -sc .
             )"
 
-            # Make sure the inventory app is installed on every organization
+            # Make sure the app is also installed on every organization
             # with access to all repositories
             for org in $(jq -r '.[]' <<<"$orgs"); do
               selection="$(
                 gh api --hostname "$host" --paginate \
                   "/enterprises/$ENTERPRISE/apps/organizations/$org/installations?per_page=100" \
-                  --jq ".[] | select(.client_id == \"$INVENTORY_APP_CLIENT_ID\") | .repository_selection"
+                  --jq ".[] | select(.client_id == \"$APP_CLIENT_ID\") | .repository_selection"
               )"
               if [[ -z "$selection" ]]; then
-                echo "Installing inventory app on $org"
+                echo "Installing app on $org"
                 gh api --hostname "$host" --method POST --silent \
                   "/enterprises/$ENTERPRISE/apps/organizations/$org/installations" \
-                  -f client_id="$INVENTORY_APP_CLIENT_ID" \
+                  -f client_id="$APP_CLIENT_ID" \
                   -f repository_selection=all
               elif [[ "$selection" != "all" ]]; then
-                echo "::warning::Inventory app on $org only has access to selected repositories; stats will be incomplete."
+                echo "::warning::App on $org only has access to selected repositories; stats will be incomplete."
               fi
             done
           else
@@ -154,10 +155,10 @@ jobs:
           type: organization
           base-url: ${{ inputs.base_url || 'https://api.github.com' }}
           github-token: ${{ github.token }}
-          # In github-app mode the action mints a token for the inventory app's
+          # In github-app mode the action mints a token for the app's
           # installation on this organization
-          github-app-id: ${{ inputs.auth == 'github-app' && vars.INVENTORY_APP_ID || '' }}
-          github-app-private-key: ${{ inputs.auth == 'github-app' && secrets.INVENTORY_APP_PRIVATE_KEY || '' }}
+          github-app-id: ${{ inputs.auth == 'github-app' && vars.APP_ID || '' }}
+          github-app-private-key: ${{ inputs.auth == 'github-app' && secrets.APP_PRIVATE_KEY || '' }}
           access-token: ${{ inputs.auth == 'pat' && secrets.ENTERPRISE_PAT || '' }}
           organization: ${{ matrix.org }}
           run-migration-audit: ${{ inputs.run_migration_audit && 'true' || 'false' }}

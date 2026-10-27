@@ -9,28 +9,30 @@ The workflow's `auth` input selects how it authenticates.
 
 ### `github-app` (default)
 
-Uses two GitHub Apps owned by the enterprise, following
+Uses a single GitHub App owned by the enterprise, based on
 [Automating app installations in your enterprise's organizations](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-github-apps-for-your-enterprise/automate-installations).
-Enterprise installations cannot read organization repositories, so the installer app
-installs the inventory app on each organization, and stats are gathered with
-per-organization installation tokens.
+An enterprise installation only receives the app's enterprise permissions and cannot read
+organization repositories, so the workflow uses it to install the same app on every
+organization, then gathers stats with per-organization installation tokens.
 
-1. **Installer app** – create under *Enterprise settings → GitHub Apps* with webhooks
-   disabled and the enterprise permission **Enterprise organization installations:
-   Read and write**. Install it on the enterprise account.
-2. **Inventory app** – create under the enterprise with webhooks disabled and read-only
-   permissions: repository **Administration**, **Contents**, **Issues**, **Metadata**,
-   **Pull requests**; organization **Administration**. Do not install it manually; the
-   workflow installs it on every organization with access to all repositories.
+1. Create the app under *Enterprise settings → GitHub Apps* with webhooks disabled and
+   these permissions:
+   - Enterprise: **Enterprise organization installations** – Read and write
+   - Organization: **Administration** – Read
+   - Repository: **Administration**, **Contents**, **Issues**, **Metadata**,
+     **Pull requests** – Read
+2. Install the app on the enterprise account. The workflow installs it on each
+   organization (with access to all repositories) on its first run.
 3. Configure this repository:
 
    | Name | Type | Value |
    | --- | --- | --- |
-   | `INSTALLER_APP_CLIENT_ID` | Variable | Installer app client ID |
-   | `INSTALLER_APP_PRIVATE_KEY` | Secret | Installer app private key |
-   | `INVENTORY_APP_ID` | Variable | Inventory app ID (numeric) |
-   | `INVENTORY_APP_CLIENT_ID` | Variable | Inventory app client ID |
-   | `INVENTORY_APP_PRIVATE_KEY` | Secret | Inventory app private key |
+   | `APP_ID` | Variable | App ID (numeric) |
+   | `APP_CLIENT_ID` | Variable | Client ID |
+   | `APP_PRIVATE_KEY` | Secret | Private key |
+
+The app's private key can both install apps across the enterprise and read every
+repository, so store it accordingly.
 
 ### `pat`
 
