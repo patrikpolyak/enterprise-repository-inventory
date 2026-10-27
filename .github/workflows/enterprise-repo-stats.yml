@@ -20,6 +20,14 @@ on:
         type: boolean
         required: false
         default: false
+      auth:
+        description: Authentication method (github-app uses the enterprise installer app and per-organization inventory app installations)
+        type: choice
+        required: true
+        default: github-app
+        options:
+          - github-app
+          - pat
 
 permissions:
   contents: read
@@ -29,15 +37,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       orgs: ${{ steps.orgs.outputs.orgs }}
-    env:
-      GH_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
-      GH_ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_PAT }}
-      ENTERPRISE: ${{ inputs.enterprise }}
-      BASE_URL: ${{ inputs.base_url || 'https://api.github.com' }}
     steps:
+      # Token for the installer app installed on the enterprise account. It can
+      # only list organizations and manage app installations in them.
+      - name: Create enterprise installer app token
+        id: installer-token
+        if: ${{ inputs.auth == 'github-app' }}
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.INSTALLER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.INSTALLER_APP_PRIVATE_KEY }}
+          enterprise: ${{ inputs.enterprise }}
+          github-api-url: ${{ inputs.base_url || 'https://api.github.com' }}
+
       - name: Fetch all organizations in the enterprise
         id: orgs
         shell: bash
+        env:
+          AUTH: ${{ inputs.auth }}
+          GH_TOKEN: ${{ inputs.auth == 'github-app' && steps.installer-token.outputs.token || secrets.ENTERPRISE_PAT }}
+          GH_ENTERPRISE_TOKEN: ${{ inputs.auth == 'github-app' && steps.installer-token.outputs.token || secrets.ENTERPRISE_PAT }}
+          ENTERPRISE: ${{ inputs.enterprise }}
+          BASE_URL: ${{ inputs.base_url || 'https://api.github.com' }}
+          INVENTORY_APP_CLIENT_ID: ${{ vars.INVENTORY_APP_CLIENT_ID }}
         run: |
           set -euo pipefail
 
@@ -46,23 +68,56 @@ jobs:
           host="${host%%/*}"
           if [[ "$host" == "api.github.com" ]]; then host="github.com"; fi
 
-          orgs="$(
-            gh api graphql \
-              --hostname "$host" \
-              --paginate \
-              -F enterprise="$ENTERPRISE" \
-              -f query='
-                query($enterprise: String!, $endCursor: String) {
-                  enterprise(slug: $enterprise) {
-                    organizations(first: 100, after: $endCursor) {
-                      nodes { login }
-                      pageInfo { hasNextPage endCursor }
+          if [[ "$AUTH" == "github-app" ]]; then
+            if [[ -z "$INVENTORY_APP_CLIENT_ID" ]]; then
+              echo "::error::Repository variable INVENTORY_APP_CLIENT_ID is not set."
+              exit 1
+            fi
+
+            orgs="$(
+              gh api --hostname "$host" --paginate \
+                "/enterprises/$ENTERPRISE/apps/installable_organizations?per_page=100" \
+                --jq '.[].login' \
+              | sort -u | jq -R . | jq -sc .
+            )"
+
+            # Make sure the inventory app is installed on every organization
+            # with access to all repositories
+            for org in $(jq -r '.[]' <<<"$orgs"); do
+              selection="$(
+                gh api --hostname "$host" --paginate \
+                  "/enterprises/$ENTERPRISE/apps/organizations/$org/installations?per_page=100" \
+                  --jq ".[] | select(.client_id == \"$INVENTORY_APP_CLIENT_ID\") | .repository_selection"
+              )"
+              if [[ -z "$selection" ]]; then
+                echo "Installing inventory app on $org"
+                gh api --hostname "$host" --method POST --silent \
+                  "/enterprises/$ENTERPRISE/apps/organizations/$org/installations" \
+                  -f client_id="$INVENTORY_APP_CLIENT_ID" \
+                  -f repository_selection=all
+              elif [[ "$selection" != "all" ]]; then
+                echo "::warning::Inventory app on $org only has access to selected repositories; stats will be incomplete."
+              fi
+            done
+          else
+            orgs="$(
+              gh api graphql \
+                --hostname "$host" \
+                --paginate \
+                -F enterprise="$ENTERPRISE" \
+                -f query='
+                  query($enterprise: String!, $endCursor: String) {
+                    enterprise(slug: $enterprise) {
+                      organizations(first: 100, after: $endCursor) {
+                        nodes { login }
+                        pageInfo { hasNextPage endCursor }
+                      }
                     }
-                  }
-                }' \
-              --jq '.data.enterprise.organizations.nodes[].login' \
-            | sort -u | jq -R . | jq -sc .
-          )"
+                  }' \
+                --jq '.data.enterprise.organizations.nodes[].login' \
+              | sort -u | jq -R . | jq -sc .
+            )"
+          fi
 
           count="$(jq 'length' <<<"$orgs")"
           echo "Discovered $count organizations:"
@@ -99,7 +154,11 @@ jobs:
           type: organization
           base-url: ${{ inputs.base_url || 'https://api.github.com' }}
           github-token: ${{ github.token }}
-          access-token: ${{ secrets.ENTERPRISE_PAT }}
+          # In github-app mode the action mints a token for the inventory app's
+          # installation on this organization
+          github-app-id: ${{ inputs.auth == 'github-app' && vars.INVENTORY_APP_ID || '' }}
+          github-app-private-key: ${{ inputs.auth == 'github-app' && secrets.INVENTORY_APP_PRIVATE_KEY || '' }}
+          access-token: ${{ inputs.auth == 'pat' && secrets.ENTERPRISE_PAT || '' }}
           organization: ${{ matrix.org }}
           run-migration-audit: ${{ inputs.run_migration_audit && 'true' || 'false' }}
 
