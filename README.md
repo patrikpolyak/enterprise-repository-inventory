@@ -39,3 +39,12 @@ repository, so store it accordingly.
 Uses the `ENTERPRISE_PAT` secret: a personal access token (classic) from an enterprise owner
 with access to every organization. Use this where enterprise
 GitHub App installations are unavailable (for example, older GHES versions).
+
+## GHE.com (data residency) and GHES
+
+- Set the `base_url` input to the API URL, for example `https://api.SUBDOMAIN.ghe.com`
+  or `https://ghes.example.com/api/v3`.
+- `gh-repo-stats-plus` installs its CLI extensions from github.com, and the workflow's
+  `GITHUB_TOKEN` is not valid there. Add a `GITHUB_COM_TOKEN` secret containing a
+  github.com token, for example a fine-grained PAT with read-only access to public
+  repositories. On github.com this secret is not needed.
